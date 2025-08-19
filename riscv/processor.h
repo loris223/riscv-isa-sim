@@ -17,6 +17,7 @@
 #include "triggers.h"
 #include "../fesvr/memif.h"
 #include "vector_unit.h"
+#include "../sniffer/sniffer.h"
 
 #define FIRST_HPMCOUNTER 3
 #define N_HPMCOUNTERS 29
@@ -433,6 +434,9 @@ public:
 
   vectorUnit_t VU;
   triggers::module_t TM;
+
+  // Adding sniffer
+  sniffer_t sniffer;
 };
 
 #endif

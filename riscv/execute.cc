@@ -6,6 +6,7 @@
 #include "disasm.h"
 #include "decode_macros.h"
 #include <cassert>
+#include "../sniffer/sniffer.h"
 
 static void commit_log_reset(processor_t* p)
 {
@@ -160,6 +161,7 @@ inline void processor_t::update_histogram(reg_t pc)
 // These two functions are expected to be inlined by the compiler separately in
 // the processor_t::step() loop. The logged variant is used in the slow path
 static inline reg_t execute_insn_fast(processor_t* p, reg_t pc, insn_fetch_t fetch) {
+  p->sniffer.invoke(p->get_state()->XPR, pc, fetch.insn);
   return fetch.func(p, fetch.insn, pc);
 }
 static inline reg_t execute_insn_logged(processor_t* p, reg_t pc, insn_fetch_t fetch)

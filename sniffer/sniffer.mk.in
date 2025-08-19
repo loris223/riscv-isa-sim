@@ -1,0 +1,16 @@
+sniffer_subproject_deps = \
+	riscv \
+
+sniffer_srcs = \
+	path.cc		\
+	simple_path.cc \
+	loop_path.cc \
+	sniffer.cc	\
+
+sniffer_hdrs = \
+	path.h		\
+	simple_path.h \
+	loop_path.h	\
+	sniffer.h	\
+
+sniffer_LDADD = capstone

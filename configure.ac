@@ -91,6 +91,10 @@ AX_APPEND_LINK_FLAGS([-Wl,--export-dynamic])
 
 AX_CHECK_COMPILE_FLAG([-relocatable-pch], AC_SUBST([HAVE_CLANG_PCH],[yes]))
 
+AC_CHECK_LIB([capstone], [cs_open], [], [AC_MSG_ERROR([Capstone library not found])])
+
+AC_CHECK_LIB([sodium], [crypto_generichash_init], [], [AC_MSG_ERROR([libsodium not found - required for BLAKE2 hashing])])
+
 #-------------------------------------------------------------------------
 # MCPPBS subproject list
 #-------------------------------------------------------------------------
@@ -98,7 +102,7 @@ AX_CHECK_COMPILE_FLAG([-relocatable-pch], AC_SUBST([HAVE_CLANG_PCH],[yes]))
 # The '*' suffix indicates an optional subproject. The '**' suffix
 # indicates an optional subproject which is also the name of a group.
 
-MCPPBS_SUBPROJECTS([ fesvr, riscv, disasm, customext, fdt, softfloat, spike_main, spike_dasm ])
+MCPPBS_SUBPROJECTS([ sniffer, fesvr, riscv, disasm, customext, fdt, softfloat, spike_main, spike_dasm ])
 
 #-------------------------------------------------------------------------
 # MCPPBS subproject groups

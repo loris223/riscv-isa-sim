@@ -1,5 +1,13 @@
 // See LICENSE for license details.
 
+#include "../sniffer/sniffer.h"
+#include "../sniffer/sniffer.cc"
+#include "../sniffer/path.h"
+#include "../sniffer/path.cc"
+#include "../sniffer/simple_path.h"
+#include "../sniffer/simple_path.cc"
+#include "../sniffer/loop_path.h"
+#include "../sniffer/loop_path.cc"
 #include "arith.h"
 #include "processor.h"
 #include "extension.h"

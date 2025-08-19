@@ -4,6 +4,7 @@ spike_main_subproject_deps = \
 	softfloat \
 	disasm \
 	riscv \
+	sniffer \
 
 spike_main_install_prog_srcs = \
 	spike.cc \
@@ -14,6 +15,8 @@ spike_main_install_prog_srcs = \
 spike_main_srcs = \
 
 spike_main_CFLAGS = -fPIC
+
+spike_main_LDADD = capstone
 
 # This hack adds all symbols from extension.o to spike's dynamic symbol
 # table, which is required for dynamically loaded --extension libraries

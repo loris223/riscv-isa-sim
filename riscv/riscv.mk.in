@@ -6,8 +6,11 @@ riscv_subproject_deps = \
 	disasm \
 	fesvr \
 	softfloat \
+	sniffer \
 
 riscv_CFLAGS = -fPIC -I$(src_dir)/fdt
+
+riscv_LDADD = capstone
 
 riscv_install_shared_lib = yes
 
