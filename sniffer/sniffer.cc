@@ -9,6 +9,10 @@
 #include <memory>
 #include <sodium.h>
 #include <sstream>
+#include <fstream>
+#include <iostream>
+#include <array>
+#include <iomanip>
 
 #include <stdio.h>
 #include <inttypes.h>
@@ -279,6 +283,44 @@ sniffer_t::~sniffer_t() {
         std::cout << "Stack is empty or invalid.\n";
     }
 
+    
+    const char * riscv_path = std::getenv("RISCV");
+    std::string output_path = std::string(riscv_path) + "/sniffer_output";
+    std::ofstream out_file(output_path);
+    if(out_file.is_open()){
+        printf("Printing hashes to a file.\n");
+        
+        // LOOPS (file)
+        out_file << "LOOPS" << std::endl;
+        for(Path * path : all_loops){
+            if (LoopPath* loopPath = dynamic_cast<LoopPath*>(path)){
+                int index = 0;
+                for(SimplePath * sp : loopPath->paths){
+                    out_file << "0x";
+                    for (const auto& byte : sp->current_hash) {
+                        out_file << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                    }
+                    out_file << std::endl;
+                    out_file << std::dec << loopPath->times_executed[index] << std::endl;
+                    index++;
+                }
+            }
+            
+        }
+
+        // PATH
+        out_file << "PATH" << std::endl;
+        out_file << "0x";
+        for (const auto& byte : (stackic.back())->current_hash) {
+            out_file << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+        }
+        out_file << std::endl;
+    }
+    else{
+        std::cerr << "Error: Could not open file for writing!" << std::endl;
+    }
+    out_file.close();
+
     printf("Sniffer destroyed\n");
     capstone_close();
 };
@@ -337,12 +379,37 @@ std::array<uint8_t, crypto_generichash_BYTES> sniffer_t::get_final_hash() {
     return final_hash;
 }
 
-std::array<uint8_t, crypto_generichash_BYTES>  hash_branch_addrs(uint64_t src, uint64_t dst) {
+std::array<uint8_t, crypto_generichash_BYTES>  hash_branch_addrs(
+    const std::array<uint8_t, crypto_generichash_BYTES>* prev_hash, uint64_t src, uint64_t dst
+    ) {
+
     std::array<uint8_t, crypto_generichash_BYTES> hash;
     crypto_generichash_state state;
 
+    printf("Hashing\n");
+    
+    std::ostringstream oss;
+    oss << " Hash: 0x";
+    // Loop through each byte in the hash array and print it as two hex digits
+    for (const auto& byte : *prev_hash) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    }
+    printf("prev hash: %s\n", oss.str().c_str());
+    printf("src:  0x%08" PRIx64 "\n", src);  
+    printf("dst:  0x%08" PRIx64 "\n", dst);  
+    
+
     // Initialize BLAKE2b
     crypto_generichash_init(&state, nullptr, 0, hash.size());
+
+    if (prev_hash != nullptr) {
+        // If a valid pointer was provided, use the array it points to
+        crypto_generichash_update(&state, prev_hash->data(), prev_hash->size());
+    } else {
+        // If the pointer was null, use a zero-initialized array instead
+        std::array<uint8_t, crypto_generichash_BYTES> zero_hash = {};
+        crypto_generichash_update(&state, zero_hash.data(), zero_hash.size());
+    }
 
     // Hash source address
     crypto_generichash_update(&state, 
@@ -499,15 +566,16 @@ void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t in
     //          4. Add INSN to Path
     //printf("Add transition to the current path!\n");
     current_path = this->stackic.back();
+    current_path->add_transition(current_src, current_dst);
     if (LoopPath* loopPath = dynamic_cast<LoopPath*>(current_path)){
-        
+        loopPath->current_path->current_hash = hash_branch_addrs(&(loopPath->current_path->current_hash), current_src, current_dst);
     //printf("Current path is LoopPath!\n");
     }
     else{
+        current_path->current_hash = hash_branch_addrs(&(current_path->current_hash), current_src, current_dst);
         
     //printf("Current path is SimplePath!\n");
     }
-    current_path->add_transition(current_src, current_dst);
 
 }
 
@@ -580,7 +648,7 @@ void sniffer_t::invoke(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t ins
         uint64_t addr_dst = ::get_dst_addr(XPR, pc, insn, cs_insn_.get());
 
         // Calculate hash
-        auto hash = hash_branch_addrs(addr_src, addr_dst);
+        auto hash = hash_branch_addrs(NULL, addr_src, addr_dst);
 
         
 

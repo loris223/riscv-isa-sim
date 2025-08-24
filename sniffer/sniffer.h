@@ -37,7 +37,7 @@
 #include <vector>
 
 
-std::array<uint8_t, crypto_generichash_BYTES>  hash_branch_addrs(uint64_t src, uint64_t dst);
+std::array<uint8_t, crypto_generichash_BYTES>  hash_branch_addrs(const std::array<uint8_t, crypto_generichash_BYTES>* prev_hash, uint64_t src, uint64_t dst);
 
 /*****************NODE******************* */
 // Node class to hold entry and exit addresses for branch instructions
@@ -121,7 +121,7 @@ public:
         if (!entry_set || !exit_set) {
             return std::nullopt;
         }
-        return hash_branch_addrs(entry_addr, exit_addr);
+        return hash_branch_addrs(NULL, entry_addr, exit_addr);
     }
 };
 

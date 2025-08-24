@@ -27,7 +27,8 @@ bool SimplePath::equal(SimplePath * sp){
     return true;
 }
 
-SimplePath::operator std::string() const{
+
+SimplePath::operator std::string() const {
     std::ostringstream oss;
     oss << "SimplePath[";
     for (const auto& [src, dst] : transitions) {
@@ -35,5 +36,13 @@ SimplePath::operator std::string() const{
             << " -> 0x" << std::hex << std::setw(8) << std::setfill('0') << dst << ")";
     }
     oss << " ]";
+
+    // Add the hash as a hex string
+    oss << " Hash: 0x";
+    // Loop through each byte in the hash array and print it as two hex digits
+    for (const auto& byte : current_hash) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    }
+
     return oss.str();
 }
