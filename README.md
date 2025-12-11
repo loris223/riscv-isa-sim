@@ -329,3 +329,9 @@ $4 = 0
 (gdb) print text
 ...
 ```
+
+
+Modification
+------------------
+
+We have modified Spike so it allows control flow monitoring. With that we can check control flow integrity of executed program.
