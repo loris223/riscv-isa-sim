@@ -58,7 +58,14 @@ LoopPath::operator std::string() const {
     std::ostringstream oss;
     oss << "LoopPath[entry=0x" << std::hex << std::setw(8) << std::setfill('0') << entry_node_addr 
         << ", exit=0x" << std::hex << std::setw(8) << std::setfill('0') << exit_node_addr 
-        << ", paths=[";
+        << ", entry_hash=0x";
+    
+    // Add the entry_hash in hex format
+    for (const auto& byte : entry_hash) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    }
+
+    oss << ", paths=[";
 
     for (size_t i = 0; i < paths.size(); i++) {
         if (i != 0) oss << ", ";

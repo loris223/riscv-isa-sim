@@ -18,7 +18,7 @@
 #include <inttypes.h>
 #include <capstone/capstone.h>
 
-
+bool is_function_call(insn_t insn, cs_insn* cs_insn_);
 uint64_t get_dst_addr_inverse(regfile_t<reg_t, NXPR, true> XPR,
                                 uint64_t pc, insn_t insn, cs_insn* cs_insn_);
 uint64_t get_dst_addr(regfile_t<reg_t, NXPR, true> XPR,
@@ -75,17 +75,11 @@ void sniffer_t::capstone_operands_numbers_print(cs_insn * cs_insn_){
 // It dissassembles single instructions and returns capstone cs_insn pointer to object
 // of that instruction and nullptr if disasseble fails.
 std::unique_ptr<cs_insn> sniffer_t::cap_disassemble_single(const uint8_t * insn_, uint64_t insn_address){
-    /*printf("Raw bytes (@ %p): ", (void*)insn_);
-    for (size_t i = 0; i < 8; ++i) { // Assuming 4-byte instruction (adjust if needed)
-        printf("%02x ", insn_[i]);
-    }
-    printf("\n");*/
+    
 
     int count = cs_disasm(handle, insn_, sizeof(insn_)-1, insn_address, 0, &cap_insn);
 	if (count == 1) {
-        /*printf("0x%" PRIx64 ":\t%s\t\t%s\n", cap_insn[0].address, cap_insn[0].mnemonic,
-                cap_insn[0].op_str);
-        printf("ID: %d\n", cap_insn[0].id);*/
+        
         // Allocate and copy the instruction into a smart pointer
         auto result = std::make_unique<cs_insn>();
         *result = cap_insn[0]; // Copy the data
@@ -138,20 +132,6 @@ void sniffer_t::cap_disassemble_all(const uint8_t * insn_, insn_t insn){
             cs_detail *detail = cap_insn[j].detail;
             capstone_operands_print(cap_insn[j]);
             
-            /*
-            if (detail->riscv.op_count >= 1) {
-                printf("Op_count: %d\n", detail->riscv.op_count);
-                cs_riscv_op &op = detail->riscv.operands[detail->riscv.op_count-1];
-                if (op.type == RISCV_OP_IMM) {
-                    //br.target = op.imm;
-                    printf("Immediate operand: %ld\n", op.imm);
-                } else if (op.type == RISCV_OP_REG && cap_insn[j].id == RISCV_INS_JALR) {
-                    //br.target = 0;  // Mark indirect jumps
-                    printf("Target address should be extracted from register!\n");
-                }
-            }
-            */
-           //get_signed_offset(cap_insn[j], insn);
 		}
 
 		cs_free(cap_insn, count);
@@ -201,12 +181,6 @@ bool is_branch(cs_insn cs_insn_){
 }
 
 uint64_t convert_str_to_uint64_t(const char * value){
-    /*std::stringstream strValue;
-    strValue << value;
-
-    uint64_t intValue;
-    strValue >> intValue;
-    return intValue;*/
     if (strlen(value) > 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X')) {
         return strtoull(value, nullptr, 16);
     }
@@ -247,22 +221,53 @@ sniffer_t::sniffer_t() {
         this->sniffer_start_addr = convert_str_to_uint64_t(start_addr);
         this->sniffer_end_addr = convert_str_to_uint64_t(end_addr);
         
-        //printf("Again start address PC:  0x%08" PRIx32 "\n", this->sniffer_start_addr);     // 32-bit hex
-        //printf("Again end address PC:  0x%08" PRIx32 "\n", this->sniffer_end_addr);     // 32-bit hex
         
-        printf("Again start address PC:  0x%08" PRIx64 "\n", this->sniffer_start_addr);     // 32-bit hex
-        printf("Again end address PC:  0x%08" PRIx64 "\n", this->sniffer_end_addr);     // 32-bit hex
-        printf("Again end address PC:  0x%08" PRIx64 "\n", this->sniffer_end_addr - 4);     // 32-bit hex
     }
+    else{
+        std::cout << "Sniffer got no monitoring address and will not engage in act."<< '\n';
+    }
+
+
+    const char * follow_funs = std::getenv(this->snif_follow_functions_str.c_str());
+    if (follow_funs){
+        std::string value = follow_funs;
+        this->snif_follow_functions = (value == "1" || value == "TRUE");
+        std::cout << "Sniffer follows function calls."<< '\n';
+    }
+    else{
+        std::cout << "Sniffer will not follow function calls."<< '\n';
+    }
+
+
+    const char * banned_addrs = std::getenv(this->snif_banned_addrs_str.c_str());
+    if (banned_addrs){
+        std::string value = banned_addrs;
+
+        std::istringstream iss(value);
+        std::string token;
+
+        while(std::getline(iss, token, ',')){
+            token.erase(std::remove_if(token.begin(), token.end(), ::isspace), token.end());
+
+            if (!token.empty()){
+                try {
+                    uint64_t addr = std::stoull(token, nullptr, 0);
+                    this->snif_banned_addrs.push_back(addr);
+                }catch(const std::exception& e){
+                    std::cerr << "Warning: Invalid hex address '" << token << "'" << std::endl;
+                }
+            }
+        }
+    }
+    else{std::cout << "Sniffer banned addresses not provided."<< '\n';}
+
     if (sodium_init() < 0) {
         std::cerr << "Failed to initialize libsodium" << std::endl;
     }
     capstone_init();
     capstone_version();
-    //SimplePath * sp = new SimplePath();
-    //this->stackic.push_back(std::make_unique<SimplePath>());
     SimplePath * sp = new SimplePath();
-    this->stackic.push_back(sp);
+    this->path_stack.push_back(sp);
 };
 
 // Destroy sniffer object, destroy capstone
@@ -276,9 +281,9 @@ sniffer_t::~sniffer_t() {
     }
 
     std::cout << "\n=== Printing Top of Stack ===\n";
-    if (!stackic.empty() && stackic.back()) {
-        // Print the last element in stackic
-        std::cout << static_cast<std::string>(*stackic.back()) << "\n";
+    if (!path_stack.empty() && path_stack.back()) {
+        // Print the last element in stack
+        std::cout << static_cast<std::string>(*path_stack.back()) << "\n";
     } else {
         std::cout << "Stack is empty or invalid.\n";
     }
@@ -295,6 +300,12 @@ sniffer_t::~sniffer_t() {
         for(Path * path : all_loops){
             if (LoopPath* loopPath = dynamic_cast<LoopPath*>(path)){
                 int index = 0;
+                // Write entry hash
+                out_file << "0x";
+                for (const auto& byte : loopPath->entry_hash) {
+                    out_file << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                }
+                out_file << std::endl;
                 for(SimplePath * sp : loopPath->paths){
                     out_file << "0x";
                     for (const auto& byte : sp->current_hash) {
@@ -304,6 +315,7 @@ sniffer_t::~sniffer_t() {
                     out_file << std::dec << loopPath->times_executed[index] << std::endl;
                     index++;
                 }
+                out_file << std::endl;
             }
             
         }
@@ -311,7 +323,7 @@ sniffer_t::~sniffer_t() {
         // PATH
         out_file << "PATH" << std::endl;
         out_file << "0x";
-        for (const auto& byte : (stackic.back())->current_hash) {
+        for (const auto& byte : (path_stack.back())->current_hash) {
             out_file << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
         }
         out_file << std::endl;
@@ -386,17 +398,6 @@ std::array<uint8_t, crypto_generichash_BYTES>  hash_branch_addrs(
     std::array<uint8_t, crypto_generichash_BYTES> hash;
     crypto_generichash_state state;
 
-    printf("Hashing\n");
-    
-    std::ostringstream oss;
-    oss << " Hash: 0x";
-    // Loop through each byte in the hash array and print it as two hex digits
-    for (const auto& byte : *prev_hash) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
-    }
-    printf("prev hash: %s\n", oss.str().c_str());
-    printf("src:  0x%08" PRIx64 "\n", src);  
-    printf("dst:  0x%08" PRIx64 "\n", dst);  
     
 
     // Initialize BLAKE2b
@@ -435,13 +436,12 @@ std::array<uint8_t, crypto_generichash_BYTES>  hash_branch_addrs(
 // the concept. There should be a part of the sniffer that will
 // keep track of where to start tracking and where to end. When
 // tracking this should be main function.
-void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t insn){
+void sniffer_t::invoke_process(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t insn){
    //          0. There should be stack established in sniffer where the path
     //              will be tracked.
     //              - It is meta_path
 
     //          1. Filter the instructions for BRANCHES & JUMPS
-    //printf("Invokic!\n");
     
     // transform uint64 to bytes using smart pointer
     // diassemble instruction
@@ -464,7 +464,7 @@ void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t in
     // Get current path element
     // Will do with a reference for a change
     // of pointer.
-    Path* current_path = this->stackic.back();
+    Path* current_path = this->path_stack.back();
 
     // Get current SRC
     uint64_t current_src = get_src_addr(pc);
@@ -480,6 +480,38 @@ void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t in
     uint64_t not_taken_dst = 0;
     if (is_branch(*cs_insn_)){
         not_taken_dst = get_dst_addr_inverse(XPR, pc, insn, cs_insn_.get());
+    }
+
+    //             1.625 Check if it is return statement
+    // Return statement will look like jalr 0, 1, 0
+
+    //             1.75 Check if it is function call
+    if (is_function_call(insn, cs_insn_.get())){
+        // check if a function is banned
+        bool ban_addr = std::find(this->snif_banned_addrs.begin(),
+                                this->snif_banned_addrs.end(),
+                                pc) != this->snif_banned_addrs.end();
+        
+        if(this->snif_follow_functions && (!ban_addr)){
+            // add transition
+            current_path->add_transition(current_src, current_dst);
+            // hash
+            if (LoopPath* loopPath = dynamic_cast<LoopPath*>(current_path)){
+                loopPath->current_path->current_hash = hash_branch_addrs(&(loopPath->current_path->current_hash), current_src, current_dst);
+            }
+            else{
+                current_path->current_hash = hash_branch_addrs(&(current_path->current_hash), current_src, current_dst);
+            }
+        }
+        else{
+            // if function is banned or sniffer is not following
+            // functions then stop monitoring and set another 
+            // monitoring start address
+            this->sniffer_monitoring = false;
+            this->sniffer_start_addr = pc + 4;
+        }
+        
+        return;
     }
 
 
@@ -508,7 +540,7 @@ void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t in
             loopPath->end_path();
             loopPath->end_loop();
             this->all_loops.push_back(current_path);
-            this->stackic.pop_back();
+            this->path_stack.pop_back();
         }
 
     }
@@ -528,9 +560,7 @@ void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t in
     // For now we believe that only branches do loops
     // So look for branch and that the destination address
     // goes backwards
-    current_path = this->stackic.back();
-    //printf("Current src:  0x%08" PRIx32 "\n", (uint32_t)(current_src & 0xFFFFFFFF));  
-    //printf("Current dst:  0x%08" PRIx32 "\n", (uint32_t)(current_dst & 0xFFFFFFFF));  
+    current_path = this->path_stack.back();
     if(is_branch(*cs_insn_) && (current_dst < current_src)){
         //printf("We have detected the loop\n");
         // If we detect a loop we should consider two cases
@@ -546,10 +576,8 @@ void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t in
         }
         else{
             // new loop
-            //printf("New loop!\n");
             LoopPath* new_loop = new LoopPath();
             new_loop->entry_node_addr = current_dst;
-            // TODO
             // Here we have established that this exit node address
             // is not always correct. If I remember correctly loop
             // with two conditions bounded by or contradict that.
@@ -559,22 +587,23 @@ void sniffer_t::invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t in
             // to end. And if that is the case we do not terminate that loop
             // we just fix the exit node address. But for now this is ok.
             new_loop->exit_node_addr = current_src + 4;
-            stackic.push_back(new_loop);
+            new_loop->entry_hash = current_path->current_hash;
+            path_stack.push_back(new_loop);
+
         }
     }
 
     //          4. Add INSN to Path
     //printf("Add transition to the current path!\n");
-    current_path = this->stackic.back();
+    current_path = this->path_stack.back();
     current_path->add_transition(current_src, current_dst);
     if (LoopPath* loopPath = dynamic_cast<LoopPath*>(current_path)){
         loopPath->current_path->current_hash = hash_branch_addrs(&(loopPath->current_path->current_hash), current_src, current_dst);
-    //printf("Current path is LoopPath!\n");
+    
     }
     else{
         current_path->current_hash = hash_branch_addrs(&(current_path->current_hash), current_src, current_dst);
         
-    //printf("Current path is SimplePath!\n");
     }
 
 }
@@ -595,8 +624,7 @@ void sniffer_t::invoke(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t ins
     }
 
     if(this->sniffer_monitoring){
-        this->invokic(XPR, pc, insn);
-        //printf("Invokic at PC:  0x%08" PRIx32 "\n", pc_32bit);     // 32-bit hex
+        this->invoke_process(XPR, pc, insn);
     }
 
    
@@ -698,11 +726,24 @@ uint64_t calculate_jalr_target(regfile_t<reg_t, NXPR, true> XPR,
 }
 
 
+bool is_function_call(insn_t insn, cs_insn* cs_insn_){
+    // Function call is only possible with jal and jalr instructions
+    if (cs_insn_->id == RISCV_INS_JAL ||
+        cs_insn_->id == RISCV_INS_JALR){
+        // We are interested in rd register which indicates
+        // whether it is a function call or not. If it is
+        // not a function all then linking should happen
+        // with register 0, therefore doing nothing.
+        if (insn.rd() != 0){
+            return true;
+        }
+    }
+    return false;
+
+}
+
+
 uint64_t sniffer_t::get_src_addr(uint64_t pc) {
-    //printf("Source address: %d\n", pc);
-    // Why do it in a nonesense way like this?
-    // If aquisition of src address should be changed in any way
-    // the modification will be easier.
     return pc;
 };
 
@@ -723,31 +764,10 @@ uint64_t get_dst_addr(regfile_t<reg_t, NXPR, true> XPR,
         case RISCV_INS_BLTU:
         case RISCV_INS_BGEU:
             if (riscv->op_count >= 2) {
-                /*printf("operand 1 reg: 0x%08x\n", riscv->operands[0].reg);
-                printf("operand 2 reg: 0x%08x\n", riscv->operands[1].reg);
-                printf("operand 1 type: 0x%08x\n", riscv->operands[0].type);
-                printf("operand 2 type: 0x%08x\n", riscv->operands[1].type);
-                printf("operand 2 type: 0x%08x\n", riscv->operands[2].type);
-                
-                printf("operand 1 mem: 0x%08x\n", riscv->operands[0].mem);
-                printf("operand 2 mem: 0x%08d\n", riscv->operands[1].imm);
-                printf("operand 1 val: 0x%08x\n", riscv->operands[0].reg-1);
-                printf("operand 2 val: 0x%08x\n", riscv->operands[1].reg-1);
-                printf("rs1 val: 0x%08x\n", insn.rs1());
-                printf("rs2 val: 0x%08x\n", insn.rs2());*/
-                //uint64_t rs1_val = XPR[riscv->operands[0].reg-1];
-                //uint64_t rs2_val = XPR[riscv->operands[1].reg-1];
                 uint64_t rs1_val = XPR[insn.rs1()];
                 uint64_t rs2_val = XPR[insn.rs2()];
-                //uint64_t rs3_val = XPR[riscv->operands[2].reg];  
-
-                //printf("rs1 val: 0x%08"PRIx64"\n", rs1_val);
-                //printf("rs2 val: 0x%08"PRIx64"\n", rs2_val);
-                //printf("rs3 val: 0x%08"PRIx64"\n", rs3_val);
                 bool taken = evaluate_branch_condition(cs_insn_, rs1_val, rs2_val);
-                // Here lies the problem. This taken not taken is not calculating correctly.
-                // God knows why. But now I also need to know why.
-                //printf("Taken %s\n", taken ? "true" : "false");
+                
                 return calculate_branch_target(pc, insn, taken);
             }
             break;
@@ -756,9 +776,7 @@ uint64_t get_dst_addr(regfile_t<reg_t, NXPR, true> XPR,
             return calculate_jal_target(pc, insn);
 
         case RISCV_INS_JALR:
-            if (riscv->op_count >= 1) {
-                return calculate_jalr_target(XPR, riscv->operands, insn.i_imm());
-            }
+            return (XPR[insn.rs1()] + insn.i_imm()) & ~(uint64_t)1;
             break;
         default:
             printf("Problem, instruction not supported.\n");
@@ -782,8 +800,6 @@ uint64_t get_dst_addr_inverse(regfile_t<reg_t, NXPR, true> XPR,
         case RISCV_INS_BLTU:
         case RISCV_INS_BGEU:
             if (riscv->op_count >= 2) {
-                //uint64_t rs1_val = XPR[riscv->operands[0].reg];
-                //uint64_t rs2_val = XPR[riscv->operands[1].reg];
                 uint64_t rs1_val = XPR[insn.rs1()];
                 uint64_t rs2_val = XPR[insn.rs2()];
                 bool taken = evaluate_branch_condition(cs_insn_, rs1_val, rs2_val);

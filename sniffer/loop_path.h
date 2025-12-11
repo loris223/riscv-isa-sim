@@ -35,6 +35,8 @@ class LoopPath: public Path
         std::vector<SimplePath*> paths;
         std::vector<int> times_executed;
 
+        std::array<uint8_t, crypto_generichash_BYTES> entry_hash;
+
         // entry node address
         uint64_t entry_node_addr;
         // exit node address

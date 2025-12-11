@@ -133,7 +133,7 @@ class sniffer_t
     sniffer_t();
     ~sniffer_t();
     void invoke(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t insn);
-    void invokic(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t insn);
+    void invoke_process(regfile_t<reg_t, NXPR, true> XPR, uint64_t pc, insn_t insn);
     void cap_disassemble(uint64_t insn_, insn_t insn);
     void cap_disassemble(const uint8_t * insn_, insn_t insn);
     void hash_update();
@@ -141,20 +141,28 @@ class sniffer_t
     bool hash_initialized = false;
     size_t nodes_hashed = 0;
     std::array<uint8_t, crypto_generichash_BYTES> get_final_hash();
+
     // this will be the vector which holds the current path
-    //std::vector<std::unique_ptr<Path>> stackic;
-    std::vector<Path*> stackic;
+    std::vector<Path*> path_stack;
+
     // this will be the vector that will contain all loops that
     // were ever executed
-    //std::vector<std::unique_ptr<Path>> all_loops;
     std::vector<Path*> all_loops;
+    // this will hold the hash values of the path when the loop 
+    // starts to execute
+    //std::vector<std::array<uint8_t, crypto_generichash_BYTES>> loops_hash_entries;
+
 
     std::string snif_start_addr_str = "SNIFFER_START_ADDR";
     std::string snif_end_addr_str = "SNIFFER_END_ADDR";
+    std::string snif_follow_functions_str = "SNIFFER_FOLLOW_FUNS";
+    std::string snif_banned_addrs_str = "SNIFFER_BANNED_ADDRS";
     bool snif_addrs_set = false;
     uint64_t sniffer_start_addr = 0;
     uint64_t sniffer_end_addr = 0;
     bool sniffer_monitoring = false;
+    bool snif_follow_functions = false;
+    std::vector<uint64_t> snif_banned_addrs;
     
 
     
@@ -183,6 +191,5 @@ class sniffer_t
     
 };
 
-//static void invoke(){printf("Sniffer invoked\n");}
 
 #endif
