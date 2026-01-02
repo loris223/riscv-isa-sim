@@ -331,7 +331,55 @@ $4 = 0
 ```
 
 
-Modification
-------------------
+## 🔧 Spike Simulator Modification
 
-We have modified Spike so it allows control flow monitoring. With that we can check control flow integrity of executed program.
+The core of this project involves modifying the **Spike RISC-V ISA Simulator** to enable verification of control-flow. Our modifications transform Spike into a tool that can monitor and log a program's execution path for security verification.
+
+### Overview of Modifications
+
+We extended Spike's functionality to track **control-flow changes** during program execution. The simulator now generates an **execution attestation** by chaining hash values of all control-flow transitions, creating a cryptographic proof of the program's execution path.
+
+### Key Modifications Made
+
+1. **Control-Flow Monitoring Instrumentation**
+   - Intercepting all control-flow instructions (branches, jumps, returns)
+   - Implemented logging of both source and destination addresses for each control-flow transfer
+
+2. **Execution Path Hashing**
+   - Integrated BLAKE2 hash function for cryptographic hashing
+   - Implemented chained hashing: `H_i = H(H_{i-1}, (source_addr, dest_addr))`
+   - Separate handling for main path and loop paths to prevent combinatorial explosion
+
+3. **Stack-Based Path Management**
+   - Added a stack structure to manage nested execution contexts
+   - Separate tracking for main execution path and loop iterations
+   - Proper handling of loop entry/exit points
+
+4. **Boundary of Monitoring**
+   - Modified simulator to accept start and end addresses for monitoring
+   - Only tracks execution within specified function boundaries (typically `main`)
+   - Detects loop boundaries through backward jumps without link register usage
+
+### Technical Approach
+
+1. **Instruction Filtering**: Only control-flow instructions (branches, jumps, returns) are tracked
+2. **Address Calculation**: Source and destination addresses of control-flow instruction.
+3. **Path Separation**:
+   - **Main Path**: All control-flow changes outside loops
+   - **Loop Paths**: Control-flow changes within loops, tracked separately per loop instance
+4. **Output Format**: Structured output containing:
+   - Main path hash
+   - Loop hashes with iteration counts
+   - Entry point information for each loop
+
+
+### Attack Detection
+
+The modified simulator successfully detects control-flow hijacking attacks like Return-Oriented Programming (ROP) by comparing the actual execution path hash against statically computed expected values. When an attack alters the control flow, the resulting hash doesn't match any valid path, triggering a security violation alert.
+
+### Usage
+
+This modified Spike simulator is integrated into the complete control-flow attestation system. For complete usage instructions and automation scripts, refer to the main project repository.
+
+**Main Project Repository:** [VoCFI - Verification of Control-Flow Integrity](https://github.com/loris223/VoCFI)
+
